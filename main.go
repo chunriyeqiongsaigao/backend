@@ -43,6 +43,15 @@ func main() {
 	r.GET("/getSemesterInfo", getSemesterInfo)
 	r.GET("/getCourseInfoOfStudent", getCourseInfoOfStudent)
 	r.GET("/getTeacher", getTeacher)
+
+	// gbz 12-11 第一次提交3个API
+	r.GET("/changeTeacher", changeTeacher)
+    r.GET("/getCourseInfoOfTeacher", getCourseInfoOfTeacher)
+    r.GET("/insert", insert)
+	// gbz 12-11 第2次提交3个API
+	r.GET("/getCourseInfoOfAdmin", getCourseInfoOfAdmin)
+    r.GET("/getStudents", getStudents)
+    r.GET("/getTeachers", getTeachers)
 	// 加载CA证书
 	caCert, err := ioutil.ReadFile("./https/https.crt")
 	if err != nil {
@@ -253,4 +262,243 @@ func getTeacher(c *gin.Context) {
 		fmt.Println(err)
 	}
 	c.JSON(200, teachers)
+}
+
+func getTeacher(c *gin.Context) {
+    name := c.Query("name")
+    var teachers []string
+    if err := db.Table("relations").Select("name").Where("course_name = ?", name).Scan(&teachers).Error; err != nil {
+        fmt.Println(err)
+    }
+    c.JSON(200, teachers)
+}
+
+func changeTeacher(c *gin.Context) {
+    name := c.Query("name")
+    username := c.Query("username")
+    teacher := c.Query("teacher")
+
+    if err := db.Table("infos").Where("course_name = ? and username = ?", name, username).Update("teacher", teacher).Error; err != nil {
+        fmt.Println(err)
+        c.Status(400)
+    }
+    c.Status(200)
+}
+
+func getCourseInfoOfTeacher(c *gin.Context) {
+    username := c.Query("username")
+    time, _ := strconv.Atoi(c.Query("time"))
+    var courses []string
+    if err := db.Table("relations").Select("course_name").Where("name = ?", username).Scan(&courses).Error; err != nil {
+        fmt.Println(err)
+    }
+    semesterList := getSemesterList()
+    type BigInfo struct {
+        Expand bool
+        Title  string
+        Name   string
+        Status string
+        Info   []Info
+    }
+    var bigInfos []BigInfo
+    for i, v := range semesterList {
+        var item BigInfo
+        item.Title = fmt.Sprintf("第%d学期", i+1)
+        if i == time-1 {
+            item.Expand = true
+            item.Status = "ing"
+        } else if i < time-1 {
+            item.Status = "done"
+        } else {
+            item.Status = "yet"
+        }
+
+        for _, j := range v.Course {
+            for _, k := range courses {
+                if j == k {
+                    item.Name = k
+                }
+            }
+        }
+
+        var infos []Info
+        if err := db.Table("infos").Where("course_name = ? and teacher = ?", item.Name, username).Find(&infos).Error; err != nil {
+            fmt.Println(err)
+            c.Status(400)
+        }
+
+        item.Info = infos
+
+        bigInfos = append(bigInfos, item)
+    }
+    c.JSON(200, bigInfos)
+}
+
+func insert(c *gin.Context) {
+    stime := 4
+    var courses []Course
+    if err := db.Find(&courses).Error; err != nil {
+        fmt.Println(err)
+    }
+    type newCourse struct {
+        CourseName string
+        Time       int
+        Status     string
+    }
+    var newCourseList []newCourse
+    for _, v := range courses {
+        var item newCourse
+        item.CourseName = v.Name
+        item.Time = v.Time
+        if v.Time == stime {
+            item.Status = "ing"
+        } else if v.Time > stime {
+            item.Status = "yet"
+        } else {
+            item.Status = "done"
+        }
+
+        newCourseList = append(newCourseList, item)
+    }
+
+    student := []string{"学生_1", "学生_2", "学生_3", "学生_4", "学生_5", "学生_6", "学生_7", "学生_8", "学生_9", "学生_10", "学生_11", "学生_12", "学生_13", "学生_14", "学生_15", "学生_16", "学生_17", "学生_18"}
+    for _, username := range student {
+        for _, course := range newCourseList {
+            var teachers []string
+            if err := db.Table("relations").Select("name").Where("course_name = ?", course.CourseName).Scan(&teachers).Error; err != nil {
+                fmt.Println(err)
+            }
+            fmt.Println("teachers:", teachers)
+            rand.Seed(time.Now().UnixNano()) // 设置随机种子
+
+            random02 := rand.Intn(3)       // 生成 0 到 2 之间的随机数
+            random15 := 85 + rand.Intn(15) // 生成 0 到 14 之间的随机数
+            fmt.Println("random02:", random02)
+            fmt.Println("random02:", random15)
+            teacher := teachers[random02]
+            fmt.Println()
+            var info Info
+            info.CourseName = course.CourseName
+            info.Username = username
+            info.Time = course.Time
+            info.Status = course.Status
+            info.Grade = fmt.Sprintf("%d", random15)
+            info.Teacher = teacher
+            fmt.Println(info)
+            if err = db.Create(&info).Error; err != nil {
+                fmt.Println(err)
+            }
+        }
+    }
+    c.Status(200)
+
+}
+
+func getCourseInfoOfAdmin(c *gin.Context) {
+    semTime := 4
+    //最终的结构体
+    type Student struct {
+        Status string
+        Name   string
+        Grade  string
+    }
+    type Teacher struct {
+        Name     string
+        Students []Student
+    }
+    type Course struct {
+        Name     string
+        Teachers []Teacher
+    }
+    type AdminInfo struct {
+        Title   string
+        Status  string
+        Expand  bool
+        Courses []Course
+    }
+    var admin_list []AdminInfo
+    //得到学期课表
+    semesterList := getSemesterList()
+    //根据每个课拿到老师
+    //根据老师拿到每个班的同学
+    var item_admin AdminInfo
+    for _, semester := range semesterList {
+        var course_list []Course
+        for _, course := range semester.Course {
+            var item_course Course
+            item_course.Name = course
+            // 拿到课程的老师
+            var teachers []string
+            if err := db.Table("relations").Select("name").Where("course_name = ?", course).Scan(&teachers).Error; err != nil {
+                fmt.Println(err)
+            }
+            // 拿到老师的学生
+            var teachers_list []Teacher
+            for _, teacher := range teachers {
+                var item_teacher Teacher
+                var infos []Info
+                if err := db.Where("course_name = ? and teacher = ?", course, teacher).Find(&infos).Error; err != nil {
+                    fmt.Println(err)
+                }
+                var students []Student
+                for _, student := range infos {
+                    var item_student Student
+                    item_student.Name = student.Username
+                    item_student.Grade = student.Grade
+                    if semTime == student.Time {
+                        item_student.Status = "ing"
+                    } else if semTime < student.Time {
+                        item_student.Status = "yet"
+                    } else {
+                        item_student.Status = "done"
+                    }
+                    students = append(students, item_student)
+                }
+             
+
+func TimeAgo(millisecondsStr string) string {
+    milliseconds, err := strconv.ParseInt(millisecondsStr, 10, 64)
+    if err != nil {
+        fmt.Println("解析毫秒数出错:", err)
+        return ""
+    }
+    currentTime := time.Now()
+    providedTime := time.Unix(milliseconds/1000, 0)
+
+    duration := currentTime.Sub(providedTime)
+
+    if duration < time.Hour {
+        if int(duration.Minutes()) == 0 {
+            return "刚刚"
+        } else {
+            return fmt.Sprintf("%d分钟前", int(duration.Minutes()))
+        }
+    } else if duration < time.Hour*24 {
+        return fmt.Sprintf("%d小时前", int(duration.Hours()))
+    } else if duration < time.Hour*24*30 {
+        return fmt.Sprintf("%d天前", int(duration.Hours()/24))
+    } else {
+        months := int(duration.Hours() / (24 * 30))
+        if months == 1 {
+            return "1个月前"
+        } else {
+            return fmt.Sprintf("%d个月前", months)
+        }
+    }
+}
+
+func getStudents(c *gin.Context) {
+    var students []string
+    if err := db.Table("users").Where("type = ?","student").Select("username").Scan(&students).Error; err != nil {
+        fmt.Println(err)
+    }
+    c.JSON(200,students)
+}
+
+func getTeachers(c *gin.Context) {
+    var teachers []string
+    if err := db.Table("users").Where("type = ?","teacher").Select("username").Scan(&teachers).Error; err != nil {
+        fmt.Println(err)
+    }
+    c.JSON(200,teachers)
 }
