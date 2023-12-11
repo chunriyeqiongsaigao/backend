@@ -35,10 +35,14 @@ func main() {
 	}
 
 	r := gin.Default()
-	// dongdong 12-11 第一次提交 3个API
+	// dongdong 12-11 第1次提交 3个API
 	r.GET("/getCourseInfo", getCourseInfo)
 	r.GET("/writeDiscussion", writeDiscussion)
 	r.GET("/login", login)
+	// dongdong 12-11 第2次提交 3个API
+	r.GET("/getSemesterInfo", getSemesterInfo)
+	r.GET("/getCourseInfoOfStudent", getCourseInfoOfStudent)
+	r.GET("/getTeacher", getTeacher)
 	// 加载CA证书
 	caCert, err := ioutil.ReadFile("./https/https.crt")
 	if err != nil {
@@ -157,7 +161,96 @@ func login(c *gin.Context) {
 	c.JSON(200, user)
 }
 
+
 func getSemesterInfo(c *gin.Context) {
 	semesterList := getSemesterList()
 	c.JSON(200, semesterList)
+}
+
+type Semester struct {
+	Expand bool
+	Time   int
+	Title  string
+	Course []string
+}
+
+func getSemesterList() []Semester {
+	var courseList []Course
+	if err := db.Order("time ASC").Find(&courseList).Error; err != nil {
+		fmt.Println(err)
+	}
+	var semesterList []Semester
+	for i := 0; i < 6; i++ {
+		var semester Semester
+		semester.Title = fmt.Sprintf("第%d学期", i+1)
+		semester.Expand = true
+		for _, v := range courseList {
+			if v.Time == i+1 {
+				semester.Course = append(semester.Course, v.Name)
+				semester.Time = v.Time
+			}
+
+		}
+		semesterList = append(semesterList, semester)
+	}
+	return semesterList
+}
+
+type Info struct {
+	ID         int
+	Username   string
+	CourseName string
+	Time       int
+	Status     string
+	Grade      string
+	Teacher    string
+}
+
+func getCourseInfoOfStudent(c *gin.Context) {
+	username := c.Query("username")
+	time, _ := strconv.Atoi(c.Query("time"))
+	semesterList := getSemesterList()
+
+	var infos []Info
+	if err := db.Where("username = ?", username).Order("time ASC").Find(&infos).Error; err != nil {
+		fmt.Println(err)
+	}
+
+	type BigInfo struct {
+		Semester Semester
+		Info     []Info
+	}
+
+	var bigInfos []BigInfo
+	for i, v := range semesterList {
+		var item BigInfo
+		item.Semester = v
+		if i != time-1 {
+			item.Semester.Expand = false
+		}
+		for _, n := range v.Course {
+			for _, m := range infos {
+				if m.CourseName == n {
+					item.Info = append(item.Info, m)
+				}
+			}
+		}
+		bigInfos = append(bigInfos, item)
+	}
+	c.JSON(200, bigInfos)
+}
+
+type Relations struct {
+	ID         int
+	CourseName string
+	Name       string
+}
+
+func getTeacher(c *gin.Context) {
+	name := c.Query("name")
+	var teachers []string
+	if err := db.Table("relations").Select("name").Where("course_name = ?", name).Scan(&teachers).Error; err != nil {
+		fmt.Println(err)
+	}
+	c.JSON(200, teachers)
 }
