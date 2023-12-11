@@ -48,6 +48,10 @@ func main() {
 	r.GET("/changeTeacher", changeTeacher)
     r.GET("/getCourseInfoOfTeacher", getCourseInfoOfTeacher)
     r.GET("/insert", insert)
+	// gbz 12-11 第2次提交3个API
+	r.GET("/getCourseInfoOfAdmin", getCourseInfoOfAdmin)
+    r.GET("/getStudents", getStudents)
+    r.GET("/getTeachers", getTeachers)
 	// 加载CA证书
 	caCert, err := ioutil.ReadFile("./https/https.crt")
 	if err != nil {
@@ -388,4 +392,113 @@ func insert(c *gin.Context) {
     }
     c.Status(200)
 
+}
+
+func getCourseInfoOfAdmin(c *gin.Context) {
+    semTime := 4
+    //最终的结构体
+    type Student struct {
+        Status string
+        Name   string
+        Grade  string
+    }
+    type Teacher struct {
+        Name     string
+        Students []Student
+    }
+    type Course struct {
+        Name     string
+        Teachers []Teacher
+    }
+    type AdminInfo struct {
+        Title   string
+        Status  string
+        Expand  bool
+        Courses []Course
+    }
+    var admin_list []AdminInfo
+    //得到学期课表
+    semesterList := getSemesterList()
+    //根据每个课拿到老师
+    //根据老师拿到每个班的同学
+    var item_admin AdminInfo
+    for _, semester := range semesterList {
+        var course_list []Course
+        for _, course := range semester.Course {
+            var item_course Course
+            item_course.Name = course
+            // 拿到课程的老师
+            var teachers []string
+            if err := db.Table("relations").Select("name").Where("course_name = ?", course).Scan(&teachers).Error; err != nil {
+                fmt.Println(err)
+            }
+            // 拿到老师的学生
+            var teachers_list []Teacher
+            for _, teacher := range teachers {
+                var item_teacher Teacher
+                var infos []Info
+                if err := db.Where("course_name = ? and teacher = ?", course, teacher).Find(&infos).Error; err != nil {
+                    fmt.Println(err)
+                }
+                var students []Student
+                for _, student := range infos {
+                    var item_student Student
+                    item_student.Name = student.Username
+                    item_student.Grade = student.Grade
+                    if semTime == student.Time {
+                        item_student.Status = "ing"
+                    } else if semTime < student.Time {
+                        item_student.Status = "yet"
+                    } else {
+                        item_student.Status = "done"
+                    }
+                    students = append(students, item_student)
+                }
+             
+
+func TimeAgo(millisecondsStr string) string {
+    milliseconds, err := strconv.ParseInt(millisecondsStr, 10, 64)
+    if err != nil {
+        fmt.Println("解析毫秒数出错:", err)
+        return ""
+    }
+    currentTime := time.Now()
+    providedTime := time.Unix(milliseconds/1000, 0)
+
+    duration := currentTime.Sub(providedTime)
+
+    if duration < time.Hour {
+        if int(duration.Minutes()) == 0 {
+            return "刚刚"
+        } else {
+            return fmt.Sprintf("%d分钟前", int(duration.Minutes()))
+        }
+    } else if duration < time.Hour*24 {
+        return fmt.Sprintf("%d小时前", int(duration.Hours()))
+    } else if duration < time.Hour*24*30 {
+        return fmt.Sprintf("%d天前", int(duration.Hours()/24))
+    } else {
+        months := int(duration.Hours() / (24 * 30))
+        if months == 1 {
+            return "1个月前"
+        } else {
+            return fmt.Sprintf("%d个月前", months)
+        }
+    }
+}
+
+func getStudents(c *gin.Context) {
+    var students []string
+    if err := db.Table("users").Where("type = ?","student").Select("username").Scan(&students).Error; err != nil {
+        fmt.Println(err)
+    }
+    c.JSON(200,students)
+}
+
+func getTeachers(c *gin.Context) {
+    var teachers []string
+    if err := db.Table("users").Where("type = ?","teacher").Select("username").Scan(&teachers).Error; err != nil {
+        fmt.Println(err)
+    }
+    c.JSON(200,teachers)
 }
